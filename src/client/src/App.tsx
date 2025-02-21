@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import './App.css'
-import { Download } from 'lucide-react'
+import { Download, Loader2 } from 'lucide-react'
 import axios from "axios";
 
-const API_BASE_URL = "http://127.0.0.1:5000";
+
 function App() {
   const [videoUrl, setVideoUrl] = useState('')
   const [videoInfo, setVideoInfo] = useState<any>(null);
   const [downloadUrl, setDownloadUrl] = useState("");
+  const [isLoadingInfo, setIsLoadingInfo] = useState(false);
+  const [loadingDownload, setLoadingDownload] = useState<number | null>(null);
 
   const fetchVideoInfo = async () => {
+    setIsLoadingInfo(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/video_info`, {
+      const response = await axios.get(`/video_info`, {
         params: { videoUrl },
       });
       setVideoInfo(response.data);
@@ -19,18 +22,26 @@ function App() {
     } catch (error) {
       console.error("Error fetching video info:", error);
       alert("Invalid YouTube URL!");
+    } finally {
+      setIsLoadingInfo(false);
     }
   };
 
   const generateDownloadLink = async (itag: number) => {
+    setLoadingDownload(itag);
     try {
-      const response = await axios.post(`${API_BASE_URL}/generate_download`, {
+      const response = await axios.post(`/generate_download`, {
         videoUrl,
         itag,
       });
       setDownloadUrl(response.data.download_url);
     } catch (error) {
       console.error("Error generating download link:", error);
+      if (axios.isAxiosError(error) && error.response) {
+        console.error("Server error details:", error.response.data);
+      }
+    } finally {
+      setLoadingDownload(null);
     }
   };
 
@@ -47,10 +58,17 @@ function App() {
             onChange={(e) => setVideoUrl(e.target.value)}
             placeholder="https://www.youtube.com/watch?v="
             className="block min-w-6/7 grow py-1.5 pr-3 pl-1 text-base text-gray-900 placeholder:text-gray-400 focus:outline-none sm:text-sm/6"
-          />
-          <Download onClick={fetchVideoInfo} className='pointer-events-auto col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end hover:text-gray-900 text-gray-500 sm:size-4' />
-
-        </div>
+          /> <button
+            onClick={fetchVideoInfo}
+            disabled={isLoadingInfo}
+            className="mr-2"
+          >
+            {isLoadingInfo ? (
+              <Loader2 className="animate-spin size-5 text-gray-500" />
+            ) : (
+              <Download className='size-5 text-gray-500 hover:text-gray-900' />
+            )}
+          </button>        </div>
 
 
         {videoInfo && (
@@ -71,8 +89,14 @@ function App() {
                       onClick={() => generateDownloadLink(stream.itag)}
                       className="bg-green-500 text-white px-3 py-1 rounded w-full"
                     >
-                      {stream.resolution} ({stream.mime_type})
-                    </button>
+                      {loadingDownload === stream.itag ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="animate-spin size-4" />
+                          <span>Processing...</span>
+                        </div>
+                      ) : (
+                        `${stream.resolution} (${stream.mime_type})`
+                      )}                    </button>
                   </li>
                 ))}
               </ul>

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from pytubefix import YouTube
 from flask_cors import CORS
 import subprocess
@@ -7,14 +7,26 @@ import time
 import threading
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
-CORS(app)  # Allow CORS for frontend communication
+app = Flask(__name__, static_folder="./dist", static_url_path="")
+CORS(app)
 
-DOWNLOAD_FOLDER = "downloads"
+DOWNLOAD_FOLDER = "./downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-FILE_EXPIRATION_MINUTES = 30  # Time before files are deleted
-CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minute
+FILE_EXPIRATION_MINUTES = 30
+CLEANUP_INTERVAL_SECONDS = 300
+
+
+# Serve React App at root URL
+@app.route("/")
+def serve():
+    return send_from_directory(app.static_folder, "index.html")
+
+
+# Serve static files
+@app.route("/<path:path>")
+def static_proxy(path):
+    return send_from_directory(app.static_url_path, path)
 
 
 @app.route("/video_info", methods=["GET"])
@@ -131,7 +143,9 @@ def generate_download():
             os.remove(video_path)
             os.remove(audio_path)
 
-        return jsonify({"download_url": f"http://127.0.0.1:5000/download/{filename}"})
+        return jsonify(
+            {"download_url": f"http://127.0.0.1:5000/{DOWNLOAD_FOLDER}/{filename}"}
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
