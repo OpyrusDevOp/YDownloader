@@ -1,0 +1,19 @@
+# Web framework and extensions
+Flask==3.0.2
+flask-cors==4.0.0
+
+# YouTube downloading
+pytubefix==8.12.1
+
+# Runtime dependencies
+Werkzeug==3.0.1
+click==8.1.7
+blinker==1.7.0
+itsdangerous==2.1.2
+
+# Utilities
+requests==2.31.0
+urllib3==2.2.0
+certifi==2024.2.2
+charset-normalizer==3.3.2
+idna==3.6

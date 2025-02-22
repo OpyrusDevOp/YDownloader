@@ -1,4 +1,6 @@
+import unicodedata
 from flask import Flask, request, jsonify, send_file, send_from_directory
+import re
 from pytubefix import YouTube
 from flask_cors import CORS
 import subprocess
@@ -88,6 +90,16 @@ def video_info():
         return jsonify({"error": str(e)}), 500
 
 
+def sanitize_filename(title):
+    """Sanitize the filename by removing special characters and normalizing text"""
+    title = unicodedata.normalize("NFKD", title)  # Normalize Unicode characters
+    title = re.sub(
+        r"[^\w\s-]", "", title
+    )  # Remove special characters except spaces and hyphens
+    title = re.sub(r"[\s]+", "_", title)  # Replace spaces with underscores
+    return title.strip("_")  # Remove leading/trailing underscores
+
+
 @app.route("/generate_download", methods=["POST"])
 def generate_download():
     """Generate a download URL for the selected quality"""
@@ -104,8 +116,9 @@ def generate_download():
         if not stream:
             return jsonify({"error": "Invalid 'itag'"}), 400
 
-        filename = f"{yt.title.replace(' ', '_')}.mp4"
-        filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+        # Sanitize filename
+        clean_title = sanitize_filename(yt.title)
+        filename = f"{clean_title}.mp4"
 
         # Check if it's adaptive (video only)
         if stream.includes_audio_track:
@@ -186,4 +199,4 @@ cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
 cleanup_thread.start()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=5000)
