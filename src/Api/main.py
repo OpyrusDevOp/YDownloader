@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 import re
 from pytubefix import YouTube
 from flask_cors import CORS
+import ffmpeg
+from pydub import AudioSegment
 import subprocess
 import os
 import time
@@ -25,10 +27,18 @@ def serve():
     return send_from_directory(app.static_folder, "index.html")
 
 
-# Serve static files
-@app.route("/<path:path>")
-def static_proxy(path):
-    return send_from_directory(app.static_url_path, path)
+@app.route("/downloads/<path:filename>", methods=["GET"])
+def download_video(filename):
+    """Serve the downloaded video or audio file"""
+    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "File not found"}), 404
+
+    # Serve the file with proper mimetype based on extension
+    mimetype = "audio/mpeg" if filename.endswith(".mp3") else "video/mp4"
+    return send_file(
+        filepath, as_attachment=True, mimetype=mimetype, download_name=filename
+    )
 
 
 @app.route("/video_info", methods=["GET"])
@@ -102,10 +112,11 @@ def sanitize_filename(title):
 
 @app.route("/generate_download", methods=["POST"])
 def generate_download():
-    """Generate a download URL for the selected quality"""
+    """Generate a download URL for the selected quality and format"""
     data = request.json
     url = data.get("videoUrl")
     itag = data.get("itag")
+    format_type = data.get("format", "video")  # Default to video, can be "audio"
 
     if not url or not itag:
         return jsonify({"error": "Missing 'url' or 'itag' parameter"}), 400
@@ -116,61 +127,69 @@ def generate_download():
         if not stream:
             return jsonify({"error": "Invalid 'itag'"}), 400
 
-        # Sanitize filename
         clean_title = sanitize_filename(yt.title)
-        filename = f"{clean_title}.mp4"
 
-        # Check if it's adaptive (video only)
-        if stream.includes_audio_track:
-            stream.download(output_path=DOWNLOAD_FOLDER, filename=filename)
-        else:
-            # Download video and best matching audio
-            video_path = os.path.join(DOWNLOAD_FOLDER, "video.mp4")
-            audio_path = os.path.join(DOWNLOAD_FOLDER, "audio.mp4")
+        if format_type == "audio":
+            filename = f"{clean_title}.mp3"
+            temp_audio_path = os.path.join(DOWNLOAD_FOLDER, "temp_audio.mp4")
 
-            stream.download(output_path=DOWNLOAD_FOLDER, filename="video.mp4")
-            yt.streams.filter(only_audio=True).first().download(
-                output_path=DOWNLOAD_FOLDER, filename="audio.mp4"
+            # Download audio stream
+            stream.download(output_path=DOWNLOAD_FOLDER, filename="temp_audio.mp4")
+
+            # Convert to MP3 using pydub with corrected bitrate format
+            audio = AudioSegment.from_file(temp_audio_path)
+            # Remove 'bps' from bitrate and ensure it's in correct format (e.g., "128k")
+            bitrate = stream.abr if stream.abr else "192k"
+            if bitrate.endswith("bps"):
+                bitrate = bitrate.replace("kbps", "k")
+
+            audio.export(
+                os.path.join(DOWNLOAD_FOLDER, filename), format="mp3", bitrate=bitrate
             )
 
-            # Merge using FFmpeg
-            merged_path = os.path.join(DOWNLOAD_FOLDER, filename)
-            command = [
-                "ffmpeg",
-                "-i",
-                video_path,
-                "-i",
-                audio_path,
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-strict",
-                "experimental",
-                merged_path,
-                "-y",
-            ]
-            subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Clean up temporary file
+            os.remove(temp_audio_path)
 
-            # Remove temp files
-            os.remove(video_path)
-            os.remove(audio_path)
+        else:  # Video handling
+            filename = f"{clean_title}.mp4"
+            if stream.includes_audio_track:
+                stream.download(output_path=DOWNLOAD_FOLDER, filename=filename)
+            else:
+                video_path = os.path.join(DOWNLOAD_FOLDER, "video.mp4")
+                audio_path = os.path.join(DOWNLOAD_FOLDER, "audio.mp4")
+
+                stream.download(output_path=DOWNLOAD_FOLDER, filename="video.mp4")
+                yt.streams.filter(only_audio=True).first().download(
+                    output_path=DOWNLOAD_FOLDER, filename="audio.mp4"
+                )
+
+                merged_path = os.path.join(DOWNLOAD_FOLDER, filename)
+                command = [
+                    "ffmpeg",
+                    "-i",
+                    video_path,
+                    "-i",
+                    audio_path,
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-strict",
+                    "experimental",
+                    merged_path,
+                    "-y",
+                ]
+                subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                os.remove(video_path)
+                os.remove(audio_path)
 
         return jsonify(
-            {"download_url": f"http://127.0.0.1:5000/{DOWNLOAD_FOLDER}/{filename}"}
+            {
+                "download_url": f"/downloads/{filename}"
+            }  # Changed from full localhost URL
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/download/<filename>", methods=["GET"])
-def download_video(filename):
-    """Serve the downloaded video file"""
-    filepath = os.path.join(DOWNLOAD_FOLDER, filename)
-    if not os.path.exists(filepath):
-        return jsonify({"error": "File not found"}), 404
-
-    return send_file(filepath, as_attachment=True)
 
 
 def cleanup_old_files():

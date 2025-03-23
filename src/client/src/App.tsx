@@ -27,12 +27,13 @@ function App() {
     }
   };
 
-  const generateDownloadLink = async (itag: number) => {
+  const generateDownloadLink = async (itag: number, format: 'video' | 'audio' = 'video') => {
     setLoadingDownload(itag);
     try {
       const response = await axios.post(`/generate_download`, {
         videoUrl,
         itag,
+        format
       });
       setDownloadUrl(response.data.download_url);
     } catch (error) {
@@ -44,6 +45,7 @@ function App() {
       setLoadingDownload(null);
     }
   };
+
   return (
     <div className='min-h-screen min-w-screen'>
       <div className='flex flex-col items-center w-full'>
@@ -79,39 +81,63 @@ function App() {
               <p className="text-sm text-gray-600">Views: {videoInfo.views.toLocaleString()}</p>
             </div>
 
-            <div>
-              <h3 className="text-md font-bold mt-4">Available Qualities</h3>
-              <ul className="inline-grid grid-cols-2 gap-4 ">
-                {videoInfo.streams.video.map((stream: any) => (
-                  <li key={stream.itag}>
-                    <button
-                      onClick={() => generateDownloadLink(stream.itag)}
-                      className="bg-green-500 text-white px-3 py-1 rounded w-full"
-                    >
-                      {loadingDownload === stream.itag ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <Loader2 className="animate-spin size-4" />
-                          <span>Processing...</span>
-                        </div>
-                      ) : (
-                        `${stream.resolution} (${stream.mime_type})`
-                      )}                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <div className="flex flex-col gap-6">
+              <div>
+                <h3 className="text-md font-bold">Video Qualities</h3>
+                <ul className="inline-grid grid-cols-2 gap-4">
+                  {videoInfo.streams.video.map((stream: any) => (
+                    <li key={stream.itag}>
+                      <button
+                        onClick={() => generateDownloadLink(stream.itag, 'video')}
+                        className="bg-green-500 text-white px-3 py-1 rounded w-full"
+                      >
+                        {loadingDownload === stream.itag ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Loader2 className="animate-spin size-4" />
+                            <span>Processing...</span>
+                          </div>
+                        ) : (
+                          `${stream.resolution} (${stream.mime_type})`
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
+              <div>
+                <h3 className="text-md font-bold">Audio Qualities</h3>
+                <ul className="inline-grid grid-cols-2 gap-4">
+                  {videoInfo.streams.audio.map((stream: any) => (
+                    <li key={stream.itag}>
+                      <button
+                        onClick={() => generateDownloadLink(stream.itag, 'audio')}
+                        className="bg-blue-500 text-white px-3 py-1 rounded w-full"
+                      >
+                        {loadingDownload === stream.itag ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Loader2 className="animate-spin size-4" />
+                            <span>Processing...</span>
+                          </div>
+                        ) : (
+                          `${stream.abr} MP3`
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         )}
 
         {downloadUrl && (
           <div className="mt-4">
             <a href={downloadUrl} className="bg-red-500 text-white px-4 py-2 rounded">
-              Download Video
+              Download {downloadUrl.endsWith('.mp3') ? 'Audio' : 'Video'}
             </a>
           </div>
-        )}
-      </div>
+        )}      </div>
     </div>
   )
 }
