@@ -3,13 +3,13 @@ from flask import Flask, request, jsonify, send_file, send_from_directory
 import re
 from pytubefix import YouTube
 from flask_cors import CORS
-import ffmpeg
-from pydub import AudioSegment
-import subprocess
+from moviepy import VideoFileClip, AudioFileClip
 import os
 import time
 import threading
 from datetime import datetime, timedelta
+import requests
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, TDRC, APIC
 
 app = Flask(__name__, static_folder="./dist", static_url_path="")
 CORS(app)
@@ -19,6 +19,12 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 FILE_EXPIRATION_MINUTES = 30
 CLEANUP_INTERVAL_SECONDS = 300
+
+# Configuration for metadata API
+# Example using Spotify Web API or other music metadata API
+# Configuration for MusicBrainz API
+METADATA_API_BASE_URL = "https://musicbrainz.org/ws/2"
+USER_AGENT = "YDownloader/1.0 (opyrusdeveloper@gmail.com)"  # Replace with your app name and contact email
 
 
 # Serve React App at root URL
@@ -110,6 +116,113 @@ def sanitize_filename(title):
     return title.strip("_")  # Remove leading/trailing underscores
 
 
+
+@app.route("/search_metadata", methods=["GET"])
+def search_metadata():
+    """Search for song metadata using MusicBrainz API"""
+    query = request.args.get("query")
+    if not query:
+        return jsonify({"error": "Missing query parameter"}), 400
+
+    try:
+        headers = {"User-Agent": USER_AGENT}
+        params = {
+            "query": query,
+            "fmt": "json",
+            "limit": 10
+        }
+        response = requests.get(f"{METADATA_API_BASE_URL}/recording", params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for recording in data.get("recordings", []):
+            # Extract artist information
+            artist = recording.get("artist-credit", [{}])[0].get("name", "Unknown Artist")
+            
+            # Extract album information from release groups
+            album = "Unknown Album"
+            year = None
+            if "releases" in recording and recording["releases"]:
+                album = recording["releases"][0].get("title", "Unknown Album")
+                date = recording["releases"][0].get("date")
+                if date:
+                    year = date[:4]  # Extract year from date (e.g., "1975-11-21" -> "1975")
+
+            # Fetch cover art from Cover Art Archive if available
+            cover_url = None
+            if "releases" in recording and recording["releases"]:
+                release_id = recording["releases"][0].get("id")
+                if release_id:
+                    try:
+                        cover_response = requests.get(
+                            f"https://coverartarchive.org/release/{release_id}/front-500",
+                            headers=headers
+                        )
+                        if cover_response.status_code == 200:
+                            cover_url = f"https://coverartarchive.org/release/{release_id}/front-500"
+                    except:
+                        pass  # Skip cover art if request fails
+
+            results.append({
+                "id": recording.get("id", ""),
+                "title": recording.get("title", query.title()),
+                "artist": artist,
+                "album": album,
+                "year": year or "Unknown",
+                "cover_url": cover_url
+            })
+
+        return jsonify({"results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def add_metadata_to_mp3(filepath, metadata):
+    """Add metadata to an MP3 file"""
+    try:
+        # Initialize ID3 tags
+        audio = ID3()
+        
+        # Add title
+        if metadata.get("title"):
+            audio.add(TIT2(encoding=3, text=metadata["title"]))
+        
+        # Add artist
+        if metadata.get("artist"):
+            audio.add(TPE1(encoding=3, text=metadata["artist"]))
+        
+        # Add album
+        if metadata.get("album"):
+            audio.add(TALB(encoding=3, text=metadata["album"]))
+        
+        # Add year
+        if metadata.get("year"):
+            audio.add(TDRC(encoding=3, text=metadata["year"]))
+        
+        # Add cover art if available
+        if metadata.get("cover_url"):
+            try:
+                cover_response = requests.get(metadata["cover_url"])
+                if cover_response.status_code == 200:
+                    audio.add(APIC(
+                        encoding=3,
+                        mime='image/jpeg',
+                        type=3,  # 3 is for cover image
+                        desc='Cover',
+                        data=cover_response.content
+                    ))
+            except Exception as e:
+                print(f"Failed to add cover: {str(e)}")
+        
+        # Save metadata to file
+        audio.save(filepath)
+        return True, "Metadata added successfully"
+    except Exception as e:
+        print(f"Failed to add metadata: {str(e)}")
+        return False, f"Failed to add metadata: {str(e)}"
+
+
 @app.route("/generate_download", methods=["POST"])
 def generate_download():
     """Generate a download URL for the selected quality and format"""
@@ -117,6 +230,7 @@ def generate_download():
     url = data.get("videoUrl")
     itag = data.get("itag")
     format_type = data.get("format", "video")  # Default to video, can be "audio"
+    metadata = data.get("metadata")  # Optional metadata for audio files
 
     if not url or not itag:
         return jsonify({"error": "Missing 'url' or 'itag' parameter"}), 400
@@ -128,67 +242,92 @@ def generate_download():
             return jsonify({"error": "Invalid 'itag'"}), 400
 
         clean_title = sanitize_filename(yt.title)
+        metadata_status = {"success": False, "message": "No metadata applied"}
 
         if format_type == "audio":
-            filename = f"{clean_title}.mp3"
+            if metadata:
+                # Use the track title from metadata if available
+                filename = f"{sanitize_filename(metadata['title'])} - {sanitize_filename(metadata['artist'])}.mp3"
+            else:
+                filename = f"{clean_title}.mp3"
+                
             temp_audio_path = os.path.join(DOWNLOAD_FOLDER, "temp_audio.mp4")
+            mp3_file_path = os.path.join(DOWNLOAD_FOLDER, filename)
 
             # Download audio stream
             stream.download(output_path=DOWNLOAD_FOLDER, filename="temp_audio.mp4")
+            
+            # Convert to MP3
+            video = AudioFileClip(temp_audio_path)
+            video.write_audiofile(mp3_file_path)
+            video.close()
 
-            # Convert to MP3 using pydub with corrected bitrate format
-            audio = AudioSegment.from_file(temp_audio_path)
-            # Remove 'bps' from bitrate and ensure it's in correct format (e.g., "128k")
-            bitrate = stream.abr if stream.abr else "192k"
-            if bitrate.endswith("bps"):
-                bitrate = bitrate.replace("kbps", "k")
-
-            audio.export(
-                os.path.join(DOWNLOAD_FOLDER, filename), format="mp3", bitrate=bitrate
-            )
+            # Add metadata if available
+            if metadata:
+                success, message = add_metadata_to_mp3(mp3_file_path, metadata)
+                metadata_status = {"success": success, "message": message}
 
             # Clean up temporary file
             os.remove(temp_audio_path)
 
         else:  # Video handling
             filename = f"{clean_title}.mp4"
+            
             if stream.includes_audio_track:
+                # Progressive stream already has audio, just download directly
                 stream.download(output_path=DOWNLOAD_FOLDER, filename=filename)
             else:
-                video_path = os.path.join(DOWNLOAD_FOLDER, "video.mp4")
-                audio_path = os.path.join(DOWNLOAD_FOLDER, "audio.mp4")
-
-                stream.download(output_path=DOWNLOAD_FOLDER, filename="video.mp4")
-                yt.streams.filter(only_audio=True).first().download(
-                    output_path=DOWNLOAD_FOLDER, filename="audio.mp4"
-                )
-
-                merged_path = os.path.join(DOWNLOAD_FOLDER, filename)
-                command = [
-                    "ffmpeg",
-                    "-i",
-                    video_path,
-                    "-i",
-                    audio_path,
-                    "-c:v",
-                    "copy",
-                    "-c:a",
-                    "aac",
-                    "-strict",
-                    "experimental",
-                    merged_path,
-                    "-y",
-                ]
-                subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                os.remove(video_path)
-                os.remove(audio_path)
-
-        return jsonify(
-            {
-                "download_url": f"/downloads/{filename}"
-            }  # Changed from full localhost URL
-        )
+                # Need to merge video and audio streams
+                video_path = os.path.join(DOWNLOAD_FOLDER, "temp_video.mp4")
+                audio_path = os.path.join(DOWNLOAD_FOLDER, "temp_audio.mp4")
+                final_path = os.path.join(DOWNLOAD_FOLDER, filename)
+                
+                # Download video and audio streams
+                stream.download(output_path=DOWNLOAD_FOLDER, filename="temp_video.mp4")
+                audio_stream = yt.streams.filter(only_audio=True).first()
+                if not audio_stream:
+                    return jsonify({"error": "No audio stream available"}), 500
+                audio_stream.download(output_path=DOWNLOAD_FOLDER, filename="temp_audio.mp4")
+                
+                # Use MoviePy to merge video and audio
+                try:
+                    video_clip = VideoFileClip(video_path)
+                    audio_clip = AudioFileClip(audio_path)
+                    
+                    # Set audio for the video clip
+                    final_clip = video_clip.with_audio(audio_clip)
+                    
+                    # Write the final video with both video and audio
+                    final_clip.write_videofile(
+                        final_path,
+                        codec='libx264',          # Popular video codec
+                        audio_codec='aac',        # AAC audio codec for good compatibility
+                        temp_audiofile=os.path.join(DOWNLOAD_FOLDER, "temp_audio.m4a"),
+                        remove_temp=True,         # Remove temporary audio file
+                        logger=None               # Disable logging for cleaner output
+                    )
+                    
+                    # Close clips to free resources
+                    video_clip.close()
+                    audio_clip.close()
+                    final_clip.close()
+                    
+                    # Clean up temporary files
+                    if os.path.exists(video_path):
+                        os.remove(video_path)
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                        
+                except Exception as e:
+                    print(e)
+                    return jsonify({"error": f"Video merging error: {str(e)}"}), 500
+        
+        return jsonify({
+            "download_url": f"/downloads/{filename}",
+            "metadata_status": metadata_status
+        })
     except Exception as e:
+        print(e)
         return jsonify({"error": str(e)}), 500
 
 

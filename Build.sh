@@ -20,7 +20,7 @@ mkdir -p "${BUILD_DIR}/downloads"
 # Build client
 echo "Building client..."
 cd "${CLIENT_DIR}"
-npm ci # More reliable than npm install for CI/CD
+npm install # More reliable than npm install for CI/CD
 npm run build
 
 # Copy files to build directory
