@@ -1,39 +1,42 @@
-import unicodedata
-from flask import Flask, request, jsonify, send_file, send_from_directory
-import re
-from pytubefix import YouTube
-from flask_cors import CORS
-from moviepy import VideoFileClip, AudioFileClip
+from flask import Flask, send_from_directory, jsonify
 import os
-import time
-import threading
-from datetime import datetime, timedelta
-import requests
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TDRC, APIC
 
-app = Flask(__name__, static_folder="./dist", static_url_path="")
-CORS(app)
+app = Flask(__name__)
 
-DOWNLOAD_FOLDER = "./downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-FILE_EXPIRATION_MINUTES = 30
-CLEANUP_INTERVAL_SECONDS = 300
+# Your API routes
+@app.route("/api/")
+@app.route("/api")
+def api_home():
+    return jsonify({"message": "API is working!"})
 
-# Configuration for metadata API
-# Example using Spotify Web API or other music metadata API
-# Configuration for MusicBrainz API
-METADATA_API_BASE_URL = "https://musicbrainz.org/ws/2"
-USER_AGENT = "YDownloader/1.0 (opyrusdeveloper@gmail.com)"  # Replace with your app name and contact email
+
+@app.route("/api/health")
+def health_check():
+    return jsonify({"status": "healthy"})
+
+
+# Add all your existing API endpoints here with /api prefix
+@app.route("/api/your-endpoint")
+def your_endpoint():
+    return jsonify({"data": "your data"})
+
+
+# Example: If you had a download endpoint
+@app.route("/api/download/<filename>")
+def download_file(filename):
+    # Adjust path as needed
+    downloads_dir = os.path.join(os.path.dirname(__file__), "..", "downloads")
+    return send_from_directory(downloads_dir, filename, as_attachment=True)
 
 
 # Serve React App at root URL
-@app.route("/")
+@app.route("/api")
 def serve():
     return send_from_directory(app.static_folder, "index.html")
 
 
-@app.route("/downloads/<path:filename>", methods=["GET"])
+@app.route("/api/downloads/<path:filename>", methods=["GET"])
 def download_video(filename):
     """Serve the downloaded video or audio file"""
     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
@@ -47,7 +50,7 @@ def download_video(filename):
     )
 
 
-@app.route("/video_info", methods=["GET"])
+@app.route("/api/video_info", methods=["GET"])
 def video_info():
     """Fetch video details and available quality options"""
     url = request.args.get("videoUrl")
@@ -116,7 +119,7 @@ def sanitize_filename(title):
     return title.strip("_")  # Remove leading/trailing underscores
 
 
-@app.route("/search_metadata", methods=["GET"])
+@app.route("/api/search_metadata", methods=["GET"])
 def search_metadata():
     """Search for song metadata using MusicBrainz API"""
     query = request.args.get("query")
@@ -228,7 +231,7 @@ def add_metadata_to_mp3(filepath, metadata):
         return False, f"Failed to add metadata: {str(e)}"
 
 
-@app.route("/generate_download", methods=["POST"])
+@app.route("/api/generate_download", methods=["POST"])
 def generate_download():
     """Generate a download URL for the selected quality and format"""
     data = request.json
@@ -365,6 +368,8 @@ def cleanup_old_files():
 cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
 cleanup_thread.start()
 
+
+# This is required for Vercel
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run()
 
