@@ -11,6 +11,20 @@ const videoAuthor = document.getElementById('videoAuthor');
 const videoDuration = document.getElementById('videoDuration');
 const videoFormatBtn = document.getElementById('videoFormatBtn');
 const audioFormatBtn = document.getElementById('audioFormatBtn');
+const metadataSection = document.getElementById('metadataSection');
+const metaTitle = document.getElementById('metaTitle');
+const metaArtist = document.getElementById('metaArtist');
+const metaAlbum = document.getElementById('metaAlbum');
+const metaYear = document.getElementById('metaYear');
+const includeThumbnail = document.getElementById('includeThumbnail');
+const customCoverUrl = document.getElementById('customCoverUrl');
+const searchMetadataBtn = document.getElementById('searchMetadataBtn');
+const searchModal = document.getElementById('searchModal');
+const closeModalBtn = document.getElementById('closeModalBtn');
+const metadataSearchInput = document.getElementById('metadataSearchInput');
+const executeSearchBtn = document.getElementById('executeSearchBtn');
+const searchLoading = document.getElementById('searchLoading');
+const searchResults = document.getElementById('searchResults');
 const qualityOptions = document.getElementById('qualityOptions');
 const downloadBtn = document.getElementById('downloadBtn');
 const downloadProgress = document.getElementById('downloadProgress');
@@ -89,6 +103,12 @@ function displayVideoInfo(info) {
   videoAuthor.textContent = info.author;
   videoDuration.textContent = formatDuration(info.time);
 
+  // Pre-fill metadata fields with video info
+  metaTitle.value = info.title;
+  metaArtist.value = info.author;
+  metaAlbum.value = '';
+  metaYear.value = new Date().getFullYear();
+
   videoInfoSection.classList.remove('hidden');
 
   // Set default format to video
@@ -107,11 +127,13 @@ function selectFormat(format) {
     videoFormatBtn.classList.remove('bg-gray-700');
     audioFormatBtn.classList.remove('bg-red-600', 'border-red-500');
     audioFormatBtn.classList.add('bg-gray-700');
+    metadataSection.classList.add('hidden');
   } else {
     audioFormatBtn.classList.add('bg-red-600', 'border-red-500');
     audioFormatBtn.classList.remove('bg-gray-700');
     videoFormatBtn.classList.remove('bg-red-600', 'border-red-500');
     videoFormatBtn.classList.add('bg-gray-700');
+    metadataSection.classList.remove('hidden');
   }
 
   // Display quality options
@@ -165,6 +187,133 @@ function selectQuality(itag, element) {
   element.classList.remove('border-transparent');
 }
 
+// Collect metadata from form
+function collectMetadata() {
+  if (selectedFormat !== 'audio') {
+    return null;
+  }
+
+  const metadata = {
+    title: metaTitle.value.trim() || currentVideoInfo.title,
+    artist: metaArtist.value.trim() || currentVideoInfo.author,
+    album: metaAlbum.value.trim() || '',
+    year: metaYear.value || new Date().getFullYear()
+  };
+
+  // Use custom cover URL if available, otherwise use video thumbnail if checked
+  if (customCoverUrl.value) {
+    metadata.thumbnail_url = customCoverUrl.value;
+  } else if (includeThumbnail.checked) {
+    metadata.thumbnail_url = currentVideoInfo.thumbnail_url;
+  }
+
+  return metadata;
+}
+
+// Open metadata search modal
+function openSearchModal() {
+  searchModal.classList.remove('hidden');
+  // Pre-fill with video title
+  metadataSearchInput.value = currentVideoInfo.title;
+  metadataSearchInput.focus();
+}
+
+// Close metadata search modal
+function closeSearchModal() {
+  searchModal.classList.add('hidden');
+  searchResults.innerHTML = '<p class="text-gray-400 text-center py-8">Enter a search query to find metadata</p>';
+}
+
+// Search for metadata using MusicBrainz
+async function searchMetadata() {
+  const query = metadataSearchInput.value.trim();
+
+  if (!query) {
+    showError('Please enter a search query');
+    return;
+  }
+
+  searchLoading.classList.remove('hidden');
+  searchResults.innerHTML = '';
+
+  try {
+    const response = await fetch(`/search_metadata?query=${encodeURIComponent(query)}`);
+
+    if (!response.ok) {
+      throw new Error('Failed to search metadata');
+    }
+
+    const data = await response.json();
+    displaySearchResults(data.results);
+
+  } catch (error) {
+    searchResults.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fas fa-exclamation-circle text-red-500 text-3xl mb-3"></i>
+                <p class="text-gray-400">${error.message}</p>
+            </div>
+        `;
+  } finally {
+    searchLoading.classList.add('hidden');
+  }
+}
+
+// Display search results
+function displaySearchResults(results) {
+  if (!results || results.length === 0) {
+    searchResults.innerHTML = `
+            <div class="text-center py-8">
+                <i class="fas fa-search text-gray-600 text-3xl mb-3"></i>
+                <p class="text-gray-400">No results found. Try a different search query.</p>
+            </div>
+        `;
+    return;
+  }
+
+  searchResults.innerHTML = '';
+
+  results.forEach(result => {
+    const resultCard = document.createElement('div');
+    resultCard.className = 'bg-gray-700 hover:bg-gray-600 rounded-lg p-3 cursor-pointer transition-all duration-200 flex gap-3 items-start';
+
+    resultCard.innerHTML = `
+            <div class="w-16 h-16 bg-gray-800 rounded flex-shrink-0 overflow-hidden">
+                ${result.cover_url
+        ? `<img src="${result.cover_url}" alt="Album cover" class="w-full h-full object-cover">`
+        : `<div class="w-full h-full flex items-center justify-center"><i class="fas fa-music text-gray-600"></i></div>`
+      }
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-semibold text-white truncate">${result.title}</div>
+                <div class="text-sm text-gray-400 truncate">${result.artist}</div>
+                <div class="text-xs text-gray-500 truncate">${result.album} ${result.year !== 'Unknown' ? `(${result.year})` : ''}</div>
+            </div>
+            <div class="flex-shrink-0">
+                <i class="fas fa-chevron-right text-gray-500"></i>
+            </div>
+        `;
+
+    resultCard.addEventListener('click', () => selectMetadata(result));
+    searchResults.appendChild(resultCard);
+  });
+}
+
+// Select metadata from search results
+function selectMetadata(result) {
+  metaTitle.value = result.title;
+  metaArtist.value = result.artist;
+  metaAlbum.value = result.album !== 'Unknown Album' ? result.album : '';
+  metaYear.value = result.year !== 'Unknown' ? result.year : new Date().getFullYear();
+
+  // Store custom cover URL if available
+  if (result.cover_url) {
+    customCoverUrl.value = result.cover_url;
+    includeThumbnail.checked = true;
+  }
+
+  closeSearchModal();
+}
+
 // Download video/audio
 async function downloadMedia() {
   if (!selectedItag) {
@@ -177,16 +326,23 @@ async function downloadMedia() {
   hideError();
 
   try {
+    const requestBody = {
+      videoUrl: currentVideoInfo.url,
+      itag: selectedItag,
+      format: selectedFormat
+    };
+
+    // Add metadata if downloading audio
+    if (selectedFormat === 'audio') {
+      requestBody.metadata = collectMetadata();
+    }
+
     const response = await fetch('/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        videoUrl: currentVideoInfo.url,
-        itag: selectedItag,
-        format: selectedFormat
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -195,6 +351,16 @@ async function downloadMedia() {
     }
 
     const data = await response.json();
+
+    // Show metadata status if available
+    let statusMessage = 'Download started successfully!';
+    if (data.metadata_status) {
+      if (data.metadata_status.success) {
+        statusMessage += ' Metadata added successfully.';
+      } else if (data.metadata_status.message !== 'No metadata applied') {
+        statusMessage += ` Note: ${data.metadata_status.message}`;
+      }
+    }
 
     // Trigger download
     const link = document.createElement('a');
@@ -208,7 +374,7 @@ async function downloadMedia() {
     downloadProgress.innerHTML = `
             <div class="bg-green-900/50 border border-green-500 rounded-lg p-4">
                 <i class="fas fa-check-circle mr-2 text-green-500"></i>
-                <span>Download started successfully!</span>
+                <span>${statusMessage}</span>
             </div>
         `;
 
@@ -223,7 +389,7 @@ async function downloadMedia() {
                     <p class="text-xs text-gray-400">Please wait while we prepare your download</p>
                 </div>
             `;
-    }, 3000);
+    }, 5000);
 
   } catch (error) {
     showError(error.message || 'An error occurred during download');
@@ -245,3 +411,21 @@ videoUrlInput.addEventListener('keypress', (e) => {
 videoFormatBtn.addEventListener('click', () => selectFormat('video'));
 audioFormatBtn.addEventListener('click', () => selectFormat('audio'));
 downloadBtn.addEventListener('click', downloadMedia);
+
+// Metadata search event listeners
+searchMetadataBtn.addEventListener('click', openSearchModal);
+closeModalBtn.addEventListener('click', closeSearchModal);
+executeSearchBtn.addEventListener('click', searchMetadata);
+
+metadataSearchInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    searchMetadata();
+  }
+});
+
+// Close modal when clicking outside
+searchModal.addEventListener('click', (e) => {
+  if (e.target === searchModal) {
+    closeSearchModal();
+  }
+});
