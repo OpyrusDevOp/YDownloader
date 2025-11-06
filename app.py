@@ -64,3 +64,8 @@ def get_video_info():
     )
 
     return jsonify(response)
+
+
+@app.route("/generate", methods=["POST"])
+def generate_download():
+    return ""
