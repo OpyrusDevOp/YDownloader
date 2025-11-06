@@ -8,6 +8,8 @@
 *.log
 /.vscode/
 /docs/.vitepress/cache
+/.venv/
+/__pycache__/
 /packages/vite/LICENSE
 /build
 dist
