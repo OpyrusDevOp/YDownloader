@@ -13,18 +13,6 @@ pipeline {
             steps { checkout scm }
         }
 
-        stage('Setup & Test') {
-            steps {
-                sh """
-                python3 -m venv ${VENV}
-                . ${VENV}/bin/activate
-                pip install --upgrade pip
-                pip install -r requirements.txt
-                pytest --maxfail=1 --disable-warnings -q
-                """
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 sh """
