@@ -1,3 +1,5 @@
 flask
 pytubefix
 moviepy
+mutagen
+requests

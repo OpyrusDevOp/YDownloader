@@ -49,7 +49,7 @@ def add_metadata_to_mp3(file_path, metadata):
         # Create ID3 tag if it doesn't exist
         try:
             audio = MP3(file_path, ID3=ID3)
-        except:
+        except Exception:
             audio = MP3(file_path)
             audio.add_tags()
 
