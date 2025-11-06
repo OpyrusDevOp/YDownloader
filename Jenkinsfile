@@ -1,6 +1,11 @@
 pipeline {
     agent { label 'Python-Agent' }
 
+    tools {
+        python 'python3'
+        docker 'docker'
+      }
+
     environment {
         VENV = "venv"
         IMAGE_NAME = "flask-app"
