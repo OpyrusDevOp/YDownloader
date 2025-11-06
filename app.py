@@ -1,5 +1,5 @@
 from typing import Any
-from flask import Flask, request
+from flask import Flask, render_template, request
 from flask.json import jsonify
 from pytubefix import YouTube
 from werkzeug.exceptions import BadRequest
@@ -27,7 +27,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def hello_world():
-    return "<p>Hello, World!</p>"
+    return render_template("index.html")
 
 
 @app.route("/videoinfo")
