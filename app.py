@@ -26,6 +26,10 @@ class VideoInfo:
     streams: StreamInfo
 
 
+METADATA_API_BASE_URL = "https://musicbrainz.org/ws/2"
+USER_AGENT = "YDownloader/1.0 (opyrusdeveloper@gmail.com)"
+
+
 app = Flask(__name__)
 
 DOWNLOAD_FOLDER = "./downloads"
@@ -43,7 +47,7 @@ def sanitize_filename(title):
 
 
 @app.route("/")
-def hello_world():
+def index():
     return render_template("index.html")
 
 
@@ -106,7 +110,7 @@ def generate_download():
             return jsonify({"error": "Invalid 'itag'"}), 400
 
         clean_title = sanitize_filename(yt.title)
-        metadata_status = {"success": False, "message": "No metadata applied"}
+        # metadata_status = {"success": False, "message": "No metadata applied"}
 
         if format_type == "audio":
             # if metadata:
@@ -191,7 +195,7 @@ def generate_download():
         return jsonify(
             {
                 "download_url": f"/downloads/{filename}",
-                "metadata_status": metadata_status,
+                # "metadata_status": metadata_status,
             }
         )
     except Exception as e:

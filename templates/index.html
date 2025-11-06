@@ -6,43 +6,115 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title></title>
   <link rel="stylesheet" href="{{ url_for('static',filename='styles/tailwindcss.css') }}">
-  <!-- <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script> -->
+
   <!-- <script src="{{url_for('static', filename='js/flyonui.js')}}"></script> -->
 </head>
 
-<body class="min-h-screen flex items-center justify-center p-4">
-  <div class="rounded-3xl shadow-2xl max-w-4xl w-full p-8 md:p-12">
+<body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen text-white">
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
     <!-- Header -->
-    <div class="text-center mb-8">
-      <div class="inline-block p-4 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl mb-4">
-        <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-        </svg>
-      </div>
-      <h1
-        class="text-4xl md:text-5xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
-        Video Downloader
+    <div class="text-center mb-12">
+      <h1 class="text-5xl font-bold mb-3 bg-gradient-to-r from-red-500 to-pink-500 bg-clip-text text-transparent">
+        YDownloader
       </h1>
-      <p class="text-gray-600 text-lg">Download videos from your favorite platforms in seconds</p>
+      <p class="text-gray-400 text-lg">Download YouTube videos and audio in high quality</p>
     </div>
 
-    <!-- Input Form -->
-    <div id="input-section" class="mb-8">
-      <form id="download-form" class="space-y-4">
-        <div class="relative">
-          <input type="url" id="video-url" placeholder="Paste video URL here..." required
-            class="w-full px-6 py-4 rounded-xl border-2 border-gray-200 focus:border-indigo-500 focus:outline-none text-lg transition-all duration-300">
-          <button type="submit"
-            class="absolute right-2 top-2 px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300">
-            Get Video
+    <!-- URL Input Section -->
+    <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 mb-8">
+      <div class="mb-6">
+        <label for="videoUrl" class="block text-sm font-medium text-gray-300 mb-2">
+          YouTube Video URL
+        </label>
+        <div class="flex gap-3">
+          <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..."
+            class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition">
+          <button id="fetchBtn"
+            class="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 px-8 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+            <i class="fas fa-search mr-2"></i>Fetch
           </button>
         </div>
-      </form>
+      </div>
+
+      <!-- Loading Spinner -->
+      <div id="loadingSpinner" class="hidden text-center py-8">
+        <i class="fas fa-spinner fa-spin text-4xl text-red-500 mb-3"></i>
+        <p class="text-gray-400">Loading video information...</p>
+      </div>
+
+      <!-- Error Message -->
+      <div id="errorMessage" class="hidden bg-red-900/50 border border-red-500 rounded-lg p-4 mb-4">
+        <i class="fas fa-exclamation-circle mr-2"></i>
+        <span id="errorText"></span>
+      </div>
     </div>
 
+    <!-- Video Info Section -->
+    <div id="videoInfoSection" class="hidden bg-gray-800 rounded-2xl shadow-2xl p-8 mb-8">
+      <div class="flex flex-col md:flex-row gap-6 mb-6">
+        <img id="thumbnail" src="" alt="Video thumbnail" class="w-full md:w-64 h-auto rounded-lg shadow-lg">
+        <div class="flex-1">
+          <h2 id="videoTitle" class="text-2xl font-bold mb-2"></h2>
+          <p class="text-gray-400 mb-2">
+            <i class="fas fa-user mr-2"></i>
+            <span id="videoAuthor"></span>
+          </p>
+          <p class="text-gray-400 mb-2">
+            <i class="fas fa-clock mr-2"></i>
+            <span id="videoDuration"></span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Format Selection -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-300 mb-3">Download Format</label>
+        <div class="flex gap-4">
+          <button id="videoFormatBtn"
+            class="flex-1 bg-gray-700 hover:bg-red-600 border-2 border-transparent py-3 rounded-lg font-semibold transition-all duration-200">
+            <i class="fas fa-video mr-2"></i>Video
+          </button>
+          <button id="audioFormatBtn"
+            class="flex-1 bg-gray-700 hover:bg-red-600 border-2 border-transparent py-3 rounded-lg font-semibold transition-all duration-200">
+            <i class="fas fa-music mr-2"></i>Audio (MP3)
+          </button>
+        </div>
+      </div>
+
+      <!-- Quality Selection -->
+      <div id="qualitySection">
+        <label class="block text-sm font-medium text-gray-300 mb-3">Select Quality</label>
+        <div id="qualityOptions" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+          <!-- Quality options will be inserted here -->
+        </div>
+      </div>
+
+      <!-- Download Button -->
+      <button id="downloadBtn" disabled
+        class="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-600 disabled:to-gray-700 py-4 rounded-lg font-bold text-lg transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:transform-none">
+        <i class="fas fa-download mr-2"></i>Download
+      </button>
+
+      <!-- Download Progress -->
+      <div id="downloadProgress" class="hidden mt-6">
+        <div class="bg-gray-700 rounded-lg p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium">Processing...</span>
+            <i class="fas fa-spinner fa-spin text-red-500"></i>
+          </div>
+          <p class="text-xs text-gray-400">Please wait while we prepare your download</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-gray-500 text-sm mt-12">
+      <p>YDownloader v1.0 - For personal use only</p>
+      <p class="mt-2">Please respect copyright and terms of service</p>
+    </div>
   </div>
 
+  <script src="{{ url_for('static', filename='js/index.js') }}"></script>
 </body>
 
 </html>
