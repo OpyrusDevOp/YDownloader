@@ -347,3 +347,9 @@ def download_video(filename):
     return send_file(
         filepath, as_attachment=True, mimetype=mimetype, download_name=filename
     )
+
+
+# Add this after all your routes
+if __name__ == "__main__":
+    port = int(os.environ.get("FLASK_RUN_PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
