@@ -4,3 +4,4 @@ moviepy
 mutagen
 requests
 setuptools
+yt_dlp

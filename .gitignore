@@ -1,9 +1,12 @@
 /downloads/
 *.mp3
 *.mp4
+*.spec
 !**/glob-import/dir/node_modules
 .idea
 /.vscode/
 /.venv/
 /__pycache__/
 node_modules
+/build/
+/dist/

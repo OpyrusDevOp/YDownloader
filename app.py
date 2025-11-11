@@ -1,20 +1,22 @@
 import os
-import unicodedata
 import re
+import unicodedata
+from dataclasses import dataclass
 from typing import Any
+
+import requests
+import yt_dlp
 from flask import Flask, render_template, request, send_file
 from flask.json import jsonify
-from pytubefix import YouTube
-from werkzeug.exceptions import BadRequest
-from dataclasses import dataclass
+from moviepy import AudioFileClip, VideoFileClip
 
 # from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
-from mutagen.id3._frames import APIC, TIT2, TPE1, TALB, TDRC
+from mutagen.id3._frames import APIC, TALB, TDRC, TIT2, TPE1
 from mutagen.mp3 import MP3
-from moviepy import AudioFileClip, VideoFileClip
-
-import requests
+from pytubefix import YouTube
+from pytubefix.innertube import InnerTube
+from werkzeug.exceptions import BadRequest
 
 
 @dataclass
@@ -121,7 +123,7 @@ def get_video_info():
     if not url:
         return BadRequest("No video url Provided")
 
-    yt = YouTube(url)
+    yt = YouTube(url, client=InnerTube("WEB").client_name)
     video_streams = [
         {
             "itag": stream.itag,
@@ -168,7 +170,7 @@ def generate_download():
         return jsonify({"error": "Missing 'url' or 'itag' parameter"}), 400
 
     try:
-        yt = YouTube(url)
+        yt = YouTube(url, "WEB")
         stream = yt.streams.get_by_itag(itag)
         if not stream:
             return jsonify({"error": "Invalid 'itag'"}), 400
@@ -347,6 +349,106 @@ def download_video(filename):
     return send_file(
         filepath, as_attachment=True, mimetype=mimetype, download_name=filename
     )
+
+
+# Replace the download function with yt-dlp version
+def download_with_yt_dlp(url, itag, format_type, download_folder, metadata=None):
+    """Download using yt-dlp which is more reliable"""
+
+    # Map itag to yt-dlp format selection
+    format_selector = (
+        f"{itag}+bestaudio/best" if format_type == "video" else "bestaudio"
+    )
+
+    ydl_opts = {
+        "outtmpl": os.path.join(download_folder, "%(title)s.%(ext)s"),
+        "format": format_selector,
+        "sleep_interval": 2,
+        "max_sleep_interval": 5,
+        "ignoreerrors": True,
+        "no_warnings": False,
+        "quiet": False,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-us,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+        },
+    }
+
+    # For audio, specify post-processing
+    if format_type == "audio":
+        ydl_opts.update(
+            {
+                "format": "bestaudio/best",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ],
+                "writethumbnail": True,
+                "postprocessor_args": [
+                    "-metadata",
+                    f"title={metadata.get('title', '')}",
+                ]
+                if metadata
+                else [],
+            }
+        )
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            downloaded_file = ydl.prepare_filename(info)
+
+            # For audio files, the actual file will have .mp3 extension
+            if format_type == "audio":
+                downloaded_file = downloaded_file.rsplit(".", 1)[0] + ".mp3"
+
+            return downloaded_file, True, "Download successful"
+
+    except Exception as e:
+        return None, False, f"Download failed: {str(e)}"
+
+
+# Update your generate_download route to use yt-dlp
+@app.route("/generate_old", methods=["POST"])
+def generate_download_ytdlp():
+    """Generate download using yt-dlp (more reliable)"""
+    data = request.json
+
+    if not data:
+        return "Missing Body data", 400
+
+    url = data.get("videoUrl")
+    itag = data.get("itag")
+    format_type = data.get("format", "video")
+    metadata = data.get("metadata")
+
+    if not url:
+        return jsonify({"error": "Missing 'url' parameter"}), 400
+
+    try:
+        file_path, success, message = download_with_yt_dlp(
+            url, itag, format_type, DOWNLOAD_FOLDER, metadata
+        )
+
+        if success:
+            filename = os.path.basename(file_path)
+            return jsonify(
+                {
+                    "download_url": f"/downloads/{filename}",
+                    "metadata_status": {"success": True, "message": message},
+                }
+            )
+        else:
+            return jsonify({"error": message}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Download failed: {str(e)}"}), 500
 
 
 # Add this after all your routes
